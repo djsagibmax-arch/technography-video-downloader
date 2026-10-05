@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-# CORS সক্রিয় করা হয়েছে যাতে technographybd.xyz থেকে কোনো ব্লকিং না আসে
+# technographybd.xyz সহ সব ডোমেন থেকে অ্যাক্সেস পাওয়ার জন্য CORS অনুমোদিত
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route("/")
@@ -28,7 +28,7 @@ def get_video():
         if not video_url:
             return jsonify({"success": False, "error": "ভিডিও লিংক প্রদান করুন"}), 400
 
-        # নির্ভরযোগ্য ব্যাকএন্ড ইঞ্জিন ক্লাস্টার
+        # ইউটিউব ও মাল্টি-প্ল্যাটফর্ম প্রসেসিং ব্যাকএন্ড ক্লাস্টার
         engine_instances = [
             "https://cobalt.api.red",
             "https://api.cobalt.tools",
@@ -53,7 +53,6 @@ def get_video():
         download_link = None
         video_title = "Technography_Downloaded_Media"
 
-        # পর্যায়ক্রমে ক্লাস্টারগুলোতে চেষ্টা করা
         for instance in engine_instances:
             try:
                 target_url = instance if instance.endswith("/") else f"{instance}/"
@@ -79,7 +78,7 @@ def get_video():
         if not download_link:
             return jsonify({
                 "success": False, 
-                "error": "ভিডিও লিংকটি প্রসেস করা সম্ভব হয়নি। লিংকটি সঠিক কি না যাচাই করে আবার চেষ্টা করুন।"
+                "error": "ভিডিও লিংকটি বের করা যায়নি। লিংকটি সঠিক কি না যাচাই করে আবার চেষ্টা করুন।"
             }), 404
 
         return jsonify({
