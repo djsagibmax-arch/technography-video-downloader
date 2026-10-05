@@ -1,6 +1,3 @@
 flask
 flask-cors
 gunicorn
-huggingface_hub
-pillow
-yt-dlp
