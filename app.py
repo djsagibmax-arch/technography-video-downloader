@@ -1,80 +1,20 @@
 import os
-import io
-import base64
-import urllib.parse
-import urllib.request
 import json
-import random
+import urllib.request
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from huggingface_hub import InferenceClient
-import yt_dlp
 
 app = Flask(__name__)
+# CORS সক্রিয় করা হয়েছে যাতে technographybd.xyz থেকে কোনো ব্লকিং না আসে
 CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Hugging Face Inference Client
-HF_TOKEN = os.environ.get("HF_TOKEN")
-client = InferenceClient(api_key=HF_TOKEN)
-
-def translate_to_english(text):
-    """স্বয়ংক্রিয় ভাষা অনুবাদ"""
-    try:
-        encoded_text = urllib.parse.quote(text)
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={encoded_text}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            return "".join([part[0] for part in result[0] if part[0]])
-    except Exception as e:
-        print(f"Translation Error: {e}")
-        return text
 
 @app.route("/")
 def home():
-    return jsonify({"status": "Technography Backend (AI + Video) Live on Render!"})
+    return jsonify({
+        "status": "Technography Video Downloader API Live on Render!"
+    })
 
-# --- ১. AI ইমেজ জেনারেটর এন্ডপয়েন্ট ---
-@app.route("/generate", methods=["POST", "OPTIONS"])
-def generate():
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
-
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        user_prompt = data.get("prompt", "").strip()
-        seed = data.get("seed")
-        
-        if seed is None:
-            seed = random.randint(1, 999999999)
-        else:
-            seed = int(seed)
-
-        if not user_prompt:
-            return jsonify({"success": False, "error": "প্রম্পট খালি রাখা যাবে না"}), 400
-
-        english_prompt = translate_to_english(user_prompt)
-        enhanced_prompt = f"{english_prompt}, cinematic, photorealistic, sharp focus, 8k resolution"
-
-        image = client.text_to_image(
-            prompt=enhanced_prompt,
-            model="black-forest-labs/FLUX.1-schnell",
-            seed=seed
-        )
-
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=90)
-        img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        return jsonify({
-            "success": True,
-            "image": f"data:image/jpeg;base64,{img_b64}",
-            "seed": seed
-        })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# --- ২. ভিডিও ডাউনলোডার এন্ডপয়েন্ট ---
+# --- ভিডিও ডাউনলোডার এন্ডপয়েন্ট ---
 @app.route("/get-video", methods=["POST", "OPTIONS"])
 def get_video():
     if request.method == "OPTIONS":
@@ -83,41 +23,73 @@ def get_video():
     try:
         data = request.get_json(force=True, silent=True) or {}
         video_url = data.get("url", "").strip()
+        mode = data.get("mode", "video")  # 'video' অথবা 'audio'
 
         if not video_url:
             return jsonify({"success": False, "error": "ভিডিও লিংক প্রদান করুন"}), 400
 
-        ydl_opts = {
-            'format': 'best[ext=mp4]/best',
-            'quiet': True,
-            'no_warnings': True,
+        # নির্ভরযোগ্য ব্যাকএন্ড ইঞ্জিন ক্লাস্টার
+        engine_instances = [
+            "https://cobalt.api.red",
+            "https://api.cobalt.tools",
+            "https://co.wuk.sh"
+        ]
+
+        payload = {
+            "url": video_url,
+            "downloadMode": "audio" if mode == "audio" else "auto",
+            "videoQuality": "720",
+            "audioFormat": "mp3",
+            "filenameStyle": "classic"
+        }
+        json_payload = json.dumps(payload).encode("utf-8")
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            title = info.get('title', 'Video')
-            thumbnail = info.get('thumbnail', '')
-            download_url = info.get('url', '')
+        download_link = None
+        video_title = "Technography_Downloaded_Media"
 
-            # কিছু প্ল্যাটফর্মের ক্ষেত্রে formats লিস্ট চেক করা
-            if not download_url and 'formats' in info:
-                for f in reversed(info['formats']):
-                    if f.get('url'):
-                        download_url = f['url']
+        # পর্যায়ক্রমে ক্লাস্টারগুলোতে চেষ্টা করা
+        for instance in engine_instances:
+            try:
+                target_url = instance if instance.endswith("/") else f"{instance}/"
+                req = urllib.request.Request(target_url, data=json_payload, headers=headers, method="POST")
+                
+                with urllib.request.urlopen(req, timeout=12) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    
+                    if res_data.get("status") in ["tunnel", "redirect"]:
+                        download_link = res_data.get("url")
+                        video_title = res_data.get("filename", video_title)
                         break
+                    elif res_data.get("status") == "picker" and res_data.get("picker"):
+                        download_link = res_data["picker"][0].get("url")
+                        break
+                    elif res_data.get("url"):
+                        download_link = res_data.get("url")
+                        video_title = res_data.get("filename", video_title)
+                        break
+            except Exception:
+                continue
 
-            if not download_url:
-                return jsonify({"success": False, "error": "ভিডিও ডাউনলোড লিংক পাওয়া যায়নি"}), 404
-
+        if not download_link:
             return jsonify({
-                "success": True,
-                "title": title,
-                "thumbnail": thumbnail,
-                "download_url": download_url
-            })
+                "success": False, 
+                "error": "ভিডিও লিংকটি প্রসেস করা সম্ভব হয়নি। লিংকটি সঠিক কি না যাচাই করে আবার চেষ্টা করুন।"
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "title": video_title,
+            "download_url": download_link
+        })
+
     except Exception as e:
-        return jsonify({"success": False, "error": f"ত্রুটি: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"সার্ভার ত্রুটি: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
